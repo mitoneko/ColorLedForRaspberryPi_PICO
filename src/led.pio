@@ -1,0 +1,43 @@
+.program led
+
+.side_set 1
+
+.origin 0
+first:
+    out x, 1            side 0 [1]
+    jmp !x out_zero     side 1 [1]
+out_one:
+    jmp first           side 1 [1]
+out_zero:
+    jmp first           side 0 [1]
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+#include "hardware/dma.h"
+
+static inline void led_program_init(uint pin, uint32_t *buff, size_t buff_size) {
+    // gpio設定
+    pio_gpio_init(pio0, pin);
+    pio_sm_set_consecutive_pindirs(pio0, 0, pin, 1, true);   // ピン方向を出力に。
+    
+    // PIO設定
+    pio_sm_config c = led_program_get_default_config(0);
+    sm_config_set_sideset_pins(&c, pin);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    sm_config_set_out_shift(&c, false, true, 24);
+    float div = (float)clock_get_hz(clk_sys) / 5000000.0; // クロック周期　0.2us
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio0, 0, 0, &c);
+    
+    // dma設定
+    dma_channel_config chan = dma_channel_get_default_config(0);
+    channel_config_set_read_increment(&chan, true);
+    channel_config_set_write_increment(&chan, false);
+    channel_config_set_dreq(&chan, pio_get_dreq(pio0, 0, true));
+    dma_channel_configure(0, &chan, &pio0->txf[0], buff, buff_size, false);
+
+    pio_sm_set_enabled(pio0, 0, true);
+}
+%}
